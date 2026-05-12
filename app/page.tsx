@@ -3,10 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { routeInput, RoutedUrl } from "@/lib/router";
 
-const sampleInput = `http://xhslink.com/o/3ve11ncSu5h
-https://www.youtube.com/shorts/ys_3Q025Pu0
-https://www.instagram.com/p/DVbOZ0EkyUp/`;
-
 type AnalyzeResponse = {
   summary?: string;
   results?: unknown;
@@ -14,13 +10,22 @@ type AnalyzeResponse = {
   details?: unknown;
 };
 
+type ContentBlock = {
+  platform: string;
+  label: string;
+  url: string;
+  kind: "caption" | "transcript";
+  text: string;
+};
+
 export default function Home() {
-  const [input, setInput] = useState(sampleInput);
+  const [input, setInput] = useState("");
   const [preference, setPreference] = useState("Summarize what the content is about. If travel, list places mentioned. If food, list food locations and venue details.");
   const [extractionText, setExtractionText] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [summary, setSummary] = useState("");
   const [backendJson, setBackendJson] = useState("");
+  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -58,6 +63,7 @@ export default function Home() {
     setError("");
     setSummary("");
     setBackendJson("");
+    setContentBlocks([]);
 
     let extractionJson: unknown = undefined;
     if (jsonText.trim()) {
@@ -112,6 +118,7 @@ export default function Home() {
 
     setSummary(data.summary || "No summary returned.");
     setBackendJson(data.results ? JSON.stringify(data.results, null, 2) : "");
+    setContentBlocks(extractContentBlocks(data.results));
     setLoading(false);
     setStartedAt(null);
   }
@@ -134,6 +141,38 @@ export default function Home() {
         <p className="meta">{route.originalUrl}</p>
       </div>
     );
+  }
+
+  function extractContentBlocks(results: unknown): ContentBlock[] {
+    const blocks: ContentBlock[] = [];
+    if (!results || typeof results !== "object") {
+      return blocks;
+    }
+
+    const grouped = results as Record<string, unknown>;
+    for (const [platform, value] of Object.entries(grouped)) {
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      value.forEach((item, index) => {
+        if (!item || typeof item !== "object") {
+          return;
+        }
+        const record = item as Record<string, unknown>;
+        const url = String(record.url || record.source_input_url || "");
+        const title = String(record.title || record.shortcode || record.post_id || `Item ${index + 1}`);
+        const caption = typeof record.caption === "string" ? record.caption.trim() : "";
+        const transcript = typeof record.transcript === "string" ? record.transcript.trim() : "";
+
+        if (caption && !caption.startsWith("[Error")) {
+          blocks.push({ platform, label: title, url, kind: "caption", text: caption });
+        }
+        if (transcript && !transcript.startsWith("[Transcription error")) {
+          blocks.push({ platform, label: title, url, kind: "transcript", text: transcript });
+        }
+      });
+    }
+    return blocks;
   }
 
   return (
@@ -191,7 +230,12 @@ export default function Home() {
         <div className="grid">
           <label className="stack">
             <span className="label">Input links or text containing links</span>
-            <textarea rows={8} value={input} onChange={(event) => setInput(event.target.value)} />
+            <textarea
+              rows={8}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Paste Instagram, YouTube, or RedNote/Xiaohongshu links here."
+            />
           </label>
 
           <label className="stack">
@@ -263,6 +307,23 @@ export default function Home() {
               <button onClick={downloadSummary}>Download TXT</button>
             </div>
             <div className="summary">{summary}</div>
+          </div>
+        ) : null}
+
+        {contentBlocks.length > 0 ? (
+          <div className="panel stack">
+            <h2>Full Extracted Content</h2>
+            {contentBlocks.map((block, index) => (
+              <div className="contentBlock" key={`${block.platform}-${block.kind}-${index}`}>
+                <div className="contentBlockHeader">
+                  <span className={`badge ${block.platform}`}>{block.platform}</span>
+                  <strong>{block.kind === "caption" ? "Caption" : "Transcript"}</strong>
+                  <span className="meta">{block.label}</span>
+                </div>
+                {block.url ? <p className="meta">{block.url}</p> : null}
+                <textarea readOnly rows={Math.min(18, Math.max(6, Math.ceil(block.text.length / 110)))} value={block.text} />
+              </div>
+            ))}
           </div>
         ) : null}
 

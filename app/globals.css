@@ -191,6 +191,26 @@ h2 {
   line-height: 1.55;
 }
 
+.contentBlock {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 14px;
+}
+
+.contentBlockHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.contentBlockHeader .badge {
+  margin-bottom: 0;
+}
+
 .statusHeader {
   display: flex;
   align-items: center;
