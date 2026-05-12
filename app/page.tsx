@@ -9,6 +9,7 @@ https://www.instagram.com/p/DVbOZ0EkyUp/`;
 
 type AnalyzeResponse = {
   summary?: string;
+  results?: unknown;
   error?: string;
   details?: unknown;
 };
@@ -19,6 +20,7 @@ export default function Home() {
   const [extractionText, setExtractionText] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [summary, setSummary] = useState("");
+  const [backendJson, setBackendJson] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -42,15 +44,33 @@ export default function Home() {
       }
     }
 
-    const response = await fetch("/api/analyze", {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    const endpoint = backendUrl ? `${backendUrl}/extract` : "/api/analyze";
+    const body = backendUrl
+      ? {
+          input,
+          user_preference: preference,
+          summarize: true,
+          resolve_redirects: true,
+          include_instagram_caption: true,
+          include_instagram_transcript: false,
+          include_youtube_metadata: true,
+          include_youtube_transcript: true,
+          include_xhs_caption: true,
+          max_videos_per_collection: 5,
+          use_whisper: false
+        }
+      : {
+          input,
+          userPreference: preference,
+          extractionText,
+          extractionJson
+        };
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        input,
-        userPreference: preference,
-        extractionText,
-        extractionJson
-      })
+      body: JSON.stringify(body)
     });
 
     const data = (await response.json()) as AnalyzeResponse;
@@ -61,6 +81,7 @@ export default function Home() {
     }
 
     setSummary(data.summary || "No summary returned.");
+    setBackendJson(data.results ? JSON.stringify(data.results, null, 2) : "");
     setLoading(false);
   }
 
@@ -91,7 +112,7 @@ export default function Home() {
           <p className="kicker">Vercel Frontend</p>
           <h1>Agentic Socmed Workflow</h1>
           <p className="meta">
-            Lightweight JSON-first interface for routing links and summarizing extracted transcript/caption data.
+            JSON-first interface for routing links, calling the Python backend, and summarizing transcript/caption data.
           </p>
         </div>
 
@@ -120,7 +141,7 @@ export default function Home() {
         <div className="panel stack">
           <h2>Backend Note</h2>
           <p className="meta">
-            This Vercel app does not run heavy scraping, ffmpeg, or Whisper. Paste extracted JSON/text here now; later this UI can call a FastAPI backend.
+            Set NEXT_PUBLIC_BACKEND_URL in Vercel to call your EC2 FastAPI backend. Without it, this page runs in LLM-summary-only mode.
           </p>
         </div>
       </aside>
@@ -162,7 +183,7 @@ export default function Home() {
               rows={12}
               value={jsonText}
               onChange={(event) => setJsonText(event.target.value)}
-              placeholder='[{"platform":"youtube","caption":"...","transcript":"..."}]'
+              placeholder='Fallback mode only: [{"platform":"youtube","caption":"...","transcript":"..."}]'
             />
           </label>
 
@@ -172,7 +193,7 @@ export default function Home() {
               rows={12}
               value={extractionText}
               onChange={(event) => setExtractionText(event.target.value)}
-              placeholder="Paste transcript and caption text here while the backend integration is being prepared."
+              placeholder="Fallback mode only: paste transcript and caption text here."
             />
           </label>
         </div>
@@ -186,6 +207,13 @@ export default function Home() {
               <button onClick={downloadSummary}>Download TXT</button>
             </div>
             <div className="summary">{summary}</div>
+          </div>
+        ) : null}
+
+        {backendJson ? (
+          <div className="panel stack">
+            <h2>Backend JSON</h2>
+            <textarea readOnly rows={14} value={backendJson} />
           </div>
         ) : null}
       </section>

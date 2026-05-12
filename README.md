@@ -26,9 +26,14 @@ Set these environment variables in Vercel:
 OPENAI_API_KEY=your_openai_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
+NEXT_PUBLIC_BACKEND_URL=http://your-ec2-public-ip:8000
 ```
 
-This Vercel UI is intentionally lightweight. It detects platforms, accepts extracted JSON/text, sends transcript/caption data to the LLM, and lets users download the summary as a `.txt` file. Heavy scraping, `ffmpeg`, video download, and Whisper should run in the Python workflow or a future FastAPI backend.
+When `NEXT_PUBLIC_BACKEND_URL` is configured, the Vercel UI calls the FastAPI backend `/extract` endpoint. Without it, the UI falls back to local LLM-summary-only mode where you can paste extracted JSON/text manually.
+
+### FastAPI Backend
+
+See [backend/README.md](backend/README.md) for EC2 deployment notes. The backend returns JSON, uses temporary directories for extraction work, and avoids persistent output files by default.
 
 ### Streamlit / Python Workflow
 
