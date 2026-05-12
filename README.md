@@ -1,6 +1,9 @@
 # Agentic Socmed Workflow
 
-A standalone Streamlit workflow that accepts free-form text containing one or more social media URLs, routes each URL to the correct platform scraper, asks for the extraction options needed by those workflows, and saves a combined `.txt` run summary.
+A social media workflow with two surfaces:
+
+- A Vercel-ready Next.js frontend for lightweight URL routing, JSON-first review, and LLM summaries.
+- A Streamlit/Python workflow for heavier local scraping, transcription, and media processing.
 
 Supported platforms:
 
@@ -9,6 +12,25 @@ Supported platforms:
 - RedNote / Xiaohongshu
 
 ## Run
+
+### Vercel / Next.js UI
+
+```bash
+npm install
+npm run dev
+```
+
+Set these environment variables in Vercel:
+
+```bash
+OPENAI_API_KEY=your_openai_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
+
+This Vercel UI is intentionally lightweight. It detects platforms, accepts extracted JSON/text, sends transcript/caption data to the LLM, and lets users download the summary as a `.txt` file. Heavy scraping, `ffmpeg`, video download, and Whisper should run in the Python workflow or a future FastAPI backend.
+
+### Streamlit / Python Workflow
 
 ```bash
 python3 -m venv .venv
@@ -23,6 +45,8 @@ Optional system dependency for video/audio transcription:
 brew install ffmpeg
 ```
 
+On Streamlit Community Cloud, `ffmpeg` is installed from `packages.txt`.
+
 Optional LLM configuration can be placed in `.env`:
 
 ```bash
@@ -32,6 +56,14 @@ OPENAI_MODEL=gpt-4o-mini
 ```
 
 OpenRouter-compatible variables are also supported as a fallback.
+
+For Streamlit Community Cloud, add the same values in the app's **Advanced settings -> Secrets** field:
+
+```toml
+OPENAI_API_KEY = "your_openai_key_here"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OPENAI_MODEL = "gpt-4o-mini"
+```
 
 ## Workflow
 

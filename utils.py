@@ -6,17 +6,27 @@ import urllib.request
 from pathlib import Path
 
 
+def _load_streamlit_secret(key: str) -> str:
+    """Read a Streamlit secret if Streamlit is available and configured."""
+    try:
+        import streamlit as st
+
+        return str(st.secrets.get(key, "")).strip()
+    except Exception:
+        return ""
+
+
 def load_env_config() -> dict:
     """Load LLM env vars from OpenAI first, then OpenRouter compatibility vars."""
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
-    model = os.environ.get("OPENAI_MODEL", "").strip()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip() or _load_streamlit_secret("OPENAI_API_KEY")
+    base_url = os.environ.get("OPENAI_BASE_URL", "").strip() or _load_streamlit_secret("OPENAI_BASE_URL")
+    model = os.environ.get("OPENAI_MODEL", "").strip() or _load_streamlit_secret("OPENAI_MODEL")
     provider = "openai" if api_key else "openrouter"
 
     if not api_key:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-        base_url = os.environ.get("OPENROUTER_BASE_URL", "").strip()
-        model = os.environ.get("OPENROUTER_MODEL", "").strip()
+        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip() or _load_streamlit_secret("OPENROUTER_API_KEY")
+        base_url = os.environ.get("OPENROUTER_BASE_URL", "").strip() or _load_streamlit_secret("OPENROUTER_BASE_URL")
+        model = os.environ.get("OPENROUTER_MODEL", "").strip() or _load_streamlit_secret("OPENROUTER_MODEL")
 
     if not api_key:
         try:
