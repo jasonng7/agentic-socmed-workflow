@@ -29,16 +29,15 @@ export default function Home() {
   const routes = useMemo(() => routeInput(input), [input]);
   const supported = routes.filter((route) => route.platform !== "unsupported");
   const unsupported = routes.filter((route) => route.platform === "unsupported");
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
   const loadingSteps = useMemo(
     () => [
       "Routing links by platform",
-      backendUrl ? "Calling EC2 extraction backend" : "Preparing local LLM summary request",
+      "Calling EC2 extraction backend through Vercel",
       "Extracting captions, transcripts, and metadata",
       "Generating LLM content summary",
       "Returning JSON results"
     ],
-    [backendUrl]
+    []
   );
   const activeStep = loading ? Math.min(Math.floor(elapsedSeconds / 12), loadingSteps.length - 1) : -1;
 
@@ -72,27 +71,22 @@ export default function Home() {
       }
     }
 
-    const endpoint = backendUrl ? `${backendUrl}/extract` : "/api/analyze";
-    const body = backendUrl
-      ? {
-          input,
-          user_preference: preference,
-          summarize: true,
-          resolve_redirects: true,
-          include_instagram_caption: true,
-          include_instagram_transcript: false,
-          include_youtube_metadata: true,
-          include_youtube_transcript: true,
-          include_xhs_caption: true,
-          max_videos_per_collection: 5,
-          use_whisper: false
-        }
-      : {
-          input,
-          userPreference: preference,
-          extractionText,
-          extractionJson
-        };
+    const endpoint = "/api/extract";
+    const body = {
+      input,
+      user_preference: preference,
+      summarize: true,
+      resolve_redirects: true,
+      include_instagram_caption: true,
+      include_instagram_transcript: false,
+      include_youtube_metadata: true,
+      include_youtube_transcript: true,
+      include_xhs_caption: true,
+      max_videos_per_collection: 5,
+      use_whisper: false,
+      fallback_extraction_text: extractionText,
+      fallback_extraction_json: extractionJson
+    };
 
     let response: Response;
     try {
@@ -102,7 +96,7 @@ export default function Home() {
         body: JSON.stringify(body)
       });
     } catch {
-      setError("Could not reach the backend. Check that EC2 is running and NEXT_PUBLIC_BACKEND_URL is correct.");
+      setError("Could not reach the backend through Vercel. Check that EC2 is running and BACKEND_URL is correct.");
       setLoading(false);
       setStartedAt(null);
       return;
