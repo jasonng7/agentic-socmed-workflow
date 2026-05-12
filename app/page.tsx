@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { routeInput, RoutedUrl } from "@/lib/router";
 
 const sampleInput = `http://xhslink.com/o/3ve11ncSu5h
@@ -23,15 +23,42 @@ export default function Home() {
   const [backendJson, setBackendJson] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const routes = useMemo(() => routeInput(input), [input]);
   const supported = routes.filter((route) => route.platform !== "unsupported");
   const unsupported = routes.filter((route) => route.platform === "unsupported");
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+  const loadingSteps = useMemo(
+    () => [
+      "Routing links by platform",
+      backendUrl ? "Calling EC2 extraction backend" : "Preparing local LLM summary request",
+      "Extracting captions, transcripts, and metadata",
+      "Generating LLM content summary",
+      "Returning JSON results"
+    ],
+    [backendUrl]
+  );
+  const activeStep = loading ? Math.min(Math.floor(elapsedSeconds / 12), loadingSteps.length - 1) : -1;
+
+  useEffect(() => {
+    if (!loading || !startedAt) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [loading, startedAt]);
 
   async function analyze() {
     setLoading(true);
+    setStartedAt(Date.now());
+    setElapsedSeconds(0);
     setError("");
     setSummary("");
+    setBackendJson("");
 
     let extractionJson: unknown = undefined;
     if (jsonText.trim()) {
@@ -40,11 +67,11 @@ export default function Home() {
       } catch {
         setError("Extraction JSON is not valid JSON.");
         setLoading(false);
+        setStartedAt(null);
         return;
       }
     }
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     const endpoint = backendUrl ? `${backendUrl}/extract` : "/api/analyze";
     const body = backendUrl
       ? {
@@ -67,22 +94,32 @@ export default function Home() {
           extractionJson
         };
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      setError("Could not reach the backend. Check that EC2 is running and NEXT_PUBLIC_BACKEND_URL is correct.");
+      setLoading(false);
+      setStartedAt(null);
+      return;
+    }
 
     const data = (await response.json()) as AnalyzeResponse;
     if (!response.ok || data.error) {
       setError(data.error || "Analysis failed.");
       setLoading(false);
+      setStartedAt(null);
       return;
     }
 
     setSummary(data.summary || "No summary returned.");
     setBackendJson(data.results ? JSON.stringify(data.results, null, 2) : "");
     setLoading(false);
+    setStartedAt(null);
   }
 
   function downloadSummary() {
@@ -199,6 +236,31 @@ export default function Home() {
         </div>
 
         {error ? <div className="panel error">{error}</div> : null}
+
+        {loading ? (
+          <div className="panel stack">
+            <div className="statusHeader">
+              <div>
+                <h2>Working On Extraction</h2>
+                <p className="meta">
+                  Elapsed {elapsedSeconds}s. Some platforms can take a minute or two, especially YouTube transcripts and Instagram captions.
+                </p>
+              </div>
+              <div className="spinner" aria-label="Loading" />
+            </div>
+            <div className="steps">
+              {loadingSteps.map((step, index) => (
+                <div className={`step ${index < activeStep ? "done" : ""} ${index === activeStep ? "active" : ""}`} key={step}>
+                  <span>{index + 1}</span>
+                  <p>{step}</p>
+                </div>
+              ))}
+            </div>
+            <p className="meta">
+              Keep this tab open. The backend returns partial JSON only when the current extraction request finishes.
+            </p>
+          </div>
+        ) : null}
 
         {summary ? (
           <div className="panel stack">
