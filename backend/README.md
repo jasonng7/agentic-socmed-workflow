@@ -29,6 +29,16 @@ OPENAI_MODEL=gpt-4o-mini
 ALLOWED_ORIGINS=https://your-vercel-app.vercel.app
 ```
 
+Optional but recommended when platforms block anonymous scraping:
+
+```bash
+YOUTUBE_COOKIES_FILE=/home/ubuntu/youtube-cookies.txt
+INSTAGRAM_USERNAME=your_instagram_username
+INSTAGRAM_SESSION_FILE=/home/ubuntu/instagram-session
+```
+
+YouTube cookies should be a Netscape-format `cookies.txt` exported from a browser session. Instagram session files can be created with Instaloader on your local machine or EC2, then referenced by path.
+
 Endpoints:
 
 - `GET /health`

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import instaloader
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -97,6 +98,32 @@ def summarize_payload(extraction: Any, user_preference: str) -> str | None:
     )
 
 
+def configured_youtube_cookies_file() -> str | None:
+    path = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+    if path and Path(path).exists():
+        return path
+    return None
+
+
+def extract_instagram_caption_configured(shortcode: str) -> tuple[str, str]:
+    username = os.environ.get("INSTAGRAM_USERNAME", "").strip()
+    session_file = os.environ.get("INSTAGRAM_SESSION_FILE", "").strip()
+
+    if username and session_file and Path(session_file).exists():
+        loader = instaloader.Instaloader(
+            download_comments=False,
+            save_metadata=False,
+            download_geotags=False,
+            download_pictures=False,
+            download_video_thumbnails=False,
+        )
+        loader.load_session_from_file(username, session_file)
+        post = instaloader.Post.from_shortcode(loader.context, shortcode)
+        return (post.caption or "").strip(), "instaloader-session"
+
+    return extract_instagram_caption(shortcode), "instaloader-anonymous"
+
+
 def process_instagram_api(urls: list[str], request: ExtractRequest, temp_dir: Path) -> list[dict]:
     options = set()
     if request.include_instagram_caption:
@@ -133,7 +160,7 @@ def process_instagram_api(urls: list[str], request: ExtractRequest, temp_dir: Pa
         try:
             shortcode = extract_shortcode(url)
             item["shortcode"] = shortcode
-            item["caption"] = extract_instagram_caption(shortcode)
+            item["caption"], item["caption_method"] = extract_instagram_caption_configured(shortcode)
         except Exception as exc:
             item["status"] = "error"
             item["error"] = str(exc)
@@ -165,6 +192,7 @@ def extract_youtube_video_id(url: str) -> tuple[str | None, bool]:
 
 def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
     video_id, is_short = extract_youtube_video_id(url)
+    cookies_file = configured_youtube_cookies_file()
     item = {
         "platform": "youtube",
         "source_input_url": url,
@@ -181,13 +209,14 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
         "transcript_status": "not_requested" if not request.include_youtube_transcript else "pending",
         "transcript_method": "",
         "metadata_status": "not_requested" if not request.include_youtube_metadata else "pending",
+        "cookies_used": bool(cookies_file),
         "status": "ok",
         "error": None,
     }
 
     if request.include_youtube_metadata:
         try:
-            metadata = get_single_video_metadata(url, browser="None", cookies_file=None)
+            metadata = get_single_video_metadata(url, browser="None", cookies_file=cookies_file)
             item.update(metadata)
             item["platform"] = "youtube"
             item["metadata_status"] = "ok"
@@ -208,7 +237,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
                 is_short=is_short,
                 use_whisper=request.use_whisper,
                 browser="None",
-                cookies_file=None,
+                cookies_file=cookies_file,
             )
             item["transcript"] = transcript
             item["transcript_status"] = status
@@ -235,6 +264,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
             results.append(process_single_youtube_api(url, request))
 
     if collections:
+        cookies_file = configured_youtube_cookies_file()
         collection_results = process_youtube_urls(
             collections,
             temp_dir / "youtube",
@@ -244,7 +274,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
             max_videos_per_collection=request.max_videos_per_collection,
             filter_type="All",
             browser="None",
-            cookies_file=None,
+            cookies_file=cookies_file,
             use_whisper=request.use_whisper,
             quality="Best",
             progress_callback=None,
