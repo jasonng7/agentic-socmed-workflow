@@ -1,9 +1,11 @@
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +14,7 @@ from pydantic import BaseModel, Field
 from scraper_instagram import extract_caption as extract_instagram_caption
 from scraper_instagram import extract_shortcode, process_instagram_urls
 from scraper_xhs import process_xhs_urls
-from scraper_youtube import process_youtube_urls
+from scraper_youtube import get_single_video_metadata, get_transcript, is_youtube_collection_url, process_youtube_urls
 from url_router import extract_urls, group_routed_urls, route_urls
 from utils import analyze_extraction_with_llm, load_env_config
 
@@ -139,24 +141,116 @@ def process_instagram_api(urls: list[str], request: ExtractRequest, temp_dir: Pa
     return results
 
 
+def extract_youtube_video_id(url: str) -> tuple[str | None, bool]:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.").removeprefix("m.")
+    path = parsed.path.strip("/")
+
+    if host == "youtu.be" and path:
+        return path.split("/")[0], False
+
+    if path.startswith("shorts/"):
+        return path.split("/")[1] if len(path.split("/")) > 1 else None, True
+
+    if path.startswith("watch"):
+        video_id = parse_qs(parsed.query).get("v", [None])[0]
+        return video_id, False
+
+    match = re.search(r"(?:v=|/shorts/|youtu\.be/)([A-Za-z0-9_-]{6,})", url)
+    if match:
+        return match.group(1), "/shorts/" in url
+
+    return None, False
+
+
+def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
+    video_id, is_short = extract_youtube_video_id(url)
+    item = {
+        "platform": "youtube",
+        "source_input_url": url,
+        "url": url,
+        "id": video_id or "",
+        "title": "",
+        "duration": "",
+        "upload_date": "",
+        "views": "",
+        "likes": "",
+        "is_short": is_short,
+        "caption": "",
+        "transcript": "",
+        "transcript_status": "not_requested" if not request.include_youtube_transcript else "pending",
+        "transcript_method": "",
+        "metadata_status": "not_requested" if not request.include_youtube_metadata else "pending",
+        "status": "ok",
+        "error": None,
+    }
+
+    if request.include_youtube_metadata:
+        try:
+            metadata = get_single_video_metadata(url, browser="None", cookies_file=None)
+            item.update(metadata)
+            item["platform"] = "youtube"
+            item["metadata_status"] = "ok"
+            video_id = metadata.get("id") or video_id
+            is_short = bool(metadata.get("is_short", is_short))
+        except Exception as exc:
+            item["metadata_status"] = "error"
+            item["metadata_error"] = str(exc)
+
+    if request.include_youtube_transcript:
+        if not video_id:
+            item["transcript_status"] = "error"
+            item["transcript_method"] = "video-id"
+            item["error"] = "Could not extract YouTube video id."
+        else:
+            transcript, status, method = get_transcript(
+                video_id,
+                is_short=is_short,
+                use_whisper=request.use_whisper,
+                browser="None",
+                cookies_file=None,
+            )
+            item["transcript"] = transcript
+            item["transcript_status"] = status
+            item["transcript_method"] = method
+
+    if item.get("metadata_status") == "error" and item.get("transcript_status") not in {"ok", "not_requested"}:
+        item["status"] = "partial"
+    elif item.get("metadata_status") == "error":
+        item["status"] = "partial"
+
+    return item
+
+
 def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path) -> list[dict]:
     if not request.include_youtube_metadata and not request.include_youtube_transcript:
         return []
 
-    results = process_youtube_urls(
-        urls,
-        temp_dir / "youtube",
-        extract_metadata=request.include_youtube_metadata,
-        extract_transcript=request.include_youtube_transcript,
-        download_videos=False,
-        max_videos_per_collection=request.max_videos_per_collection,
-        filter_type="All",
-        browser="None",
-        cookies_file=None,
-        use_whisper=request.use_whisper,
-        quality="Best",
-        progress_callback=None,
-    )
+    results = []
+    collections = []
+    for url in urls:
+        if is_youtube_collection_url(url):
+            collections.append(url)
+        else:
+            results.append(process_single_youtube_api(url, request))
+
+    if collections:
+        collection_results = process_youtube_urls(
+            collections,
+            temp_dir / "youtube",
+            extract_metadata=request.include_youtube_metadata,
+            extract_transcript=request.include_youtube_transcript,
+            download_videos=False,
+            max_videos_per_collection=request.max_videos_per_collection,
+            filter_type="All",
+            browser="None",
+            cookies_file=None,
+            use_whisper=request.use_whisper,
+            quality="Best",
+            progress_callback=None,
+        )
+        results.extend(cleanup_file_paths(collection_results))
+
     return cleanup_file_paths(results)
 
 
