@@ -39,6 +39,23 @@ INSTAGRAM_SESSION_FILE=/home/ubuntu/instagram-session
 
 YouTube cookies should be a Netscape-format `cookies.txt` exported from a browser session. Instagram session files can be created with Instaloader on your local machine or EC2, then referenced by path.
 
+Polite delay settings:
+
+```bash
+SCRAPER_MIN_DELAY_SECONDS=2
+SCRAPER_MAX_DELAY_SECONDS=6
+```
+
+The backend adds a random delay in that range before platform calls. EC2/data-center IPs are often treated more strictly than residential laptop IPs, so keeping requests slow and non-bursty helps reduce platform blocks. It does not guarantee access if the platform requires cookies or a logged-in session.
+
+Whisper fallback:
+
+```bash
+BACKEND_USE_WHISPER=true
+```
+
+This downloads audio temporarily when captions/transcripts are unavailable, runs Whisper, and deletes temporary media after the request. It is slower and uses more CPU/RAM than caption-only extraction.
+
 Endpoints:
 
 - `GET /health`

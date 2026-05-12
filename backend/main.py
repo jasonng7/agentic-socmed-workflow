@@ -1,8 +1,10 @@
 import json
 import os
+import random
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -52,6 +54,20 @@ def allowed_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
 app = FastAPI(title="Agentic Socmed Workflow Backend")
 app.add_middleware(
     CORSMiddleware,
@@ -96,6 +112,16 @@ def summarize_payload(extraction: Any, user_preference: str) -> str | None:
         env["base_url"],
         env["model"],
     )
+
+
+def polite_delay(stage: str, multiplier: float = 1.0) -> float:
+    min_delay = env_float("SCRAPER_MIN_DELAY_SECONDS", 2.0)
+    max_delay = env_float("SCRAPER_MAX_DELAY_SECONDS", 6.0)
+    if max_delay < min_delay:
+        max_delay = min_delay
+    delay = random.uniform(min_delay, max_delay) * multiplier
+    time.sleep(delay)
+    return round(delay, 2)
 
 
 def configured_youtube_cookies_file() -> str | None:
@@ -148,12 +174,14 @@ def process_instagram_api(urls: list[str], request: ExtractRequest, temp_dir: Pa
 
     results = []
     for url in urls:
+        delay = polite_delay("instagram")
         item = {
             "platform": "instagram",
             "url": url,
             "shortcode": "",
             "caption": "",
             "transcript": "",
+            "delay_seconds": delay,
             "status": "ok",
             "error": None,
         }
@@ -191,6 +219,8 @@ def extract_youtube_video_id(url: str) -> tuple[str | None, bool]:
 
 
 def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
+    delay = polite_delay("youtube")
+    use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
     video_id, is_short = extract_youtube_video_id(url)
     cookies_file = configured_youtube_cookies_file()
     item = {
@@ -210,6 +240,8 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
         "transcript_method": "",
         "metadata_status": "not_requested" if not request.include_youtube_metadata else "pending",
         "cookies_used": bool(cookies_file),
+        "whisper_enabled": use_whisper,
+        "delay_seconds": delay,
         "status": "ok",
         "error": None,
     }
@@ -227,6 +259,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
             item["metadata_error"] = str(exc)
 
     if request.include_youtube_transcript:
+        polite_delay("youtube-transcript", multiplier=0.75)
         if not video_id:
             item["transcript_status"] = "error"
             item["transcript_method"] = "video-id"
@@ -235,7 +268,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
             transcript, status, method = get_transcript(
                 video_id,
                 is_short=is_short,
-                use_whisper=request.use_whisper,
+                use_whisper=use_whisper,
                 browser="None",
                 cookies_file=cookies_file,
             )
@@ -264,7 +297,9 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
             results.append(process_single_youtube_api(url, request))
 
     if collections:
+        polite_delay("youtube-collection")
         cookies_file = configured_youtube_cookies_file()
+        use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
         collection_results = process_youtube_urls(
             collections,
             temp_dir / "youtube",
@@ -275,7 +310,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
             filter_type="All",
             browser="None",
             cookies_file=cookies_file,
-            use_whisper=request.use_whisper,
+            use_whisper=use_whisper,
             quality="Best",
             progress_callback=None,
         )
@@ -287,6 +322,8 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
 def process_xhs_api(urls: list[str], request: ExtractRequest, temp_dir: Path) -> list[dict]:
     if not request.include_xhs_caption:
         return []
+    if urls:
+        polite_delay("xhs", multiplier=0.5)
     results = process_xhs_urls(urls, temp_dir / "xhs", save_files=False, progress_callback=None)
     for item in results:
         item["platform"] = "xhs"
