@@ -534,6 +534,7 @@ def get_single_video_metadata(url: str, browser="None", cookies_file=None) -> di
     result = run_ytdlp(
         [
             "--no-playlist",
+            "--skip-download",
             "--print",
             "%(id)s\t%(title)s\t%(duration)s\t%(upload_date)s\t%(view_count)s\t%(like_count)s\t%(webpage_url)s",
             "--no-warnings",
