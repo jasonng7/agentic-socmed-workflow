@@ -1,0 +1,1 @@
+cd "/Users/jason/Downloads/Social Media Post Summary/Agentic Socmed Workflow" && ../Unified\ Socmed\ Scraper/.venv/bin/python -m streamlit run app.py --server.port 8502 --server.address 127.0.0.1
