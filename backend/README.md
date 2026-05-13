@@ -40,6 +40,8 @@ INSTAGRAM_SESSION_FILE=/home/ubuntu/instagram-session
 
 YouTube cookies should be a Netscape-format `cookies.txt` exported from a browser session. If `YOUTUBE_COOKIES_FILE` is not set, `YOUTUBE_BROWSER` is passed to `yt-dlp --cookies-from-browser`, which is useful on a local machine with browser profiles but is usually not suitable for headless EC2. Instagram session files can be created with Instaloader on your local machine or EC2, then referenced by path.
 
+For Instagram, set both `INSTAGRAM_USERNAME` and `INSTAGRAM_SESSION_FILE`. The backend uses that session for both caption extraction and temporary video downloads for transcription. Anonymous Instagram requests are prone to `401 Unauthorized` and `Please wait a few minutes before you try again` blocks on EC2.
+
 Polite delay settings:
 
 ```bash

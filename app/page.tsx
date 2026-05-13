@@ -219,13 +219,15 @@ export default function Home() {
         const record = item as Record<string, unknown>;
         const url = String(record.url || record.source_input_url || "");
         const label = String(record.title || record.shortcode || record.post_id || `${platform} ${index + 1}`);
+        const rawTranscript = typeof record.transcript === "string" ? record.transcript.trim() : "";
+        const rawCaption = typeof record.caption === "string" ? record.caption.trim() : "";
         items.push({
           key: `${platform}-${index}-${url || label}`,
           platform,
           label,
           url,
-          transcript: typeof record.transcript === "string" ? record.transcript.trim() : "",
-          caption: typeof record.caption === "string" ? record.caption.trim() : "",
+          transcript: rawTranscript.startsWith("[Transcription error") ? "" : rawTranscript,
+          caption: rawCaption.startsWith("[Error") ? "" : rawCaption,
           transcriptStatus: String(record.transcript_status || record.status || ""),
           metadataStatus: String(record.metadata_status || record.status || "")
         });
@@ -252,12 +254,6 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="panel stack">
-          <h2>Backend Note</h2>
-          <p className="meta">
-            Set NEXT_PUBLIC_BACKEND_URL in Vercel to call your EC2 FastAPI backend. Without it, this page runs in LLM-summary-only mode.
-          </p>
-        </div>
       </aside>
 
       <section className="main stack">

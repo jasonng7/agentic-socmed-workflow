@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 import time
@@ -36,20 +37,32 @@ def find_downloaded_mp4(download_dir: Path, shortcode: str) -> Path:
     return mp4_files[0]
 
 
+def build_instaloader(**kwargs) -> instaloader.Instaloader:
+    """Create an Instaloader instance and load a session when configured."""
+    loader = instaloader.Instaloader(
+        download_comments=False,
+        save_metadata=False,
+        download_geotags=False,
+        download_pictures=False,
+        download_video_thumbnails=False,
+        **kwargs,
+    )
+    username = os.environ.get("INSTAGRAM_USERNAME", "").strip()
+    session_file = os.environ.get("INSTAGRAM_SESSION_FILE", "").strip()
+    if username and session_file and Path(session_file).exists():
+        loader.load_session_from_file(username, session_file)
+    return loader
+
+
 def download_video(shortcode: str, output_dir: Path) -> Path:
     """Download Instagram reel/post video using instaloader."""
     temp_dir = output_dir / f"temp_{shortcode}"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    loader = instaloader.Instaloader(
+    loader = build_instaloader(
         dirname_pattern=str(temp_dir),
         filename_pattern="{shortcode}",
-        download_comments=False,
-        save_metadata=False,
         post_metadata_txt_pattern="",
-        download_geotags=False,
-        download_pictures=False,
-        download_video_thumbnails=False,
     )
 
     post = instaloader.Post.from_shortcode(loader.context, shortcode)
@@ -67,14 +80,8 @@ def download_video(shortcode: str, output_dir: Path) -> Path:
 
 
 def extract_caption(shortcode: str) -> str:
-    """Extract post caption text using instaloader (anonymous access)."""
-    loader = instaloader.Instaloader(
-        download_comments=False,
-        save_metadata=False,
-        download_geotags=False,
-        download_pictures=False,
-        download_video_thumbnails=False,
-    )
+    """Extract post caption text using configured session when available."""
+    loader = build_instaloader()
     post = instaloader.Post.from_shortcode(loader.context, shortcode)
     return (post.caption or "").strip()
 
@@ -140,7 +147,8 @@ def process_instagram_urls(
                     result["caption"] = caption_text
                     caption_path.write_text(caption_text, encoding="utf-8")
                 except Exception as exc:
-                    result["caption"] = f"[Error: {exc}]"
+                    result["caption"] = ""
+                    result["caption_error"] = str(exc)
 
             if want_transcript:
                 transcript = ""
