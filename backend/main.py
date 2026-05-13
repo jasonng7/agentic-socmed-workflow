@@ -10,15 +10,19 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import instaloader
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from scraper_instagram import extract_caption as extract_instagram_caption
+from scraper_instagram import download_video as download_instagram_video
 from scraper_instagram import extract_shortcode, process_instagram_urls
 from scraper_xhs import process_xhs_urls
-from scraper_youtube import get_single_video_metadata, get_transcript, is_youtube_collection_url, process_youtube_urls
+from scraper_youtube import download_video_ytdlp, get_single_video_metadata, get_transcript, is_youtube_collection_url, process_youtube_urls
 from url_router import extract_urls, group_routed_urls, route_urls
+from url_router import detect_platform
 from utils import analyze_extraction_with_llm, load_env_config
 
 
@@ -34,12 +38,12 @@ class ExtractRequest(BaseModel):
     summarize: bool = False
     resolve_redirects: bool = True
     include_instagram_caption: bool = True
-    include_instagram_transcript: bool = False
+    include_instagram_transcript: bool = True
     include_youtube_metadata: bool = True
     include_youtube_transcript: bool = True
     include_xhs_caption: bool = True
     max_videos_per_collection: int = Field(default=5, ge=1, le=50)
-    use_whisper: bool = False
+    use_whisper: bool = True
 
 
 class SummarizeRequest(BaseModel):
@@ -98,6 +102,13 @@ def cleanup_file_paths(results: list[dict]) -> list[dict]:
                 item[key] = None
         cleaned.append(item)
     return cleaned
+
+
+def newest_file(directory: Path) -> Path | None:
+    files = [path for path in directory.rglob("*") if path.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda path: path.stat().st_mtime)
 
 
 def summarize_payload(extraction: Any, user_preference: str) -> str | None:
@@ -379,3 +390,46 @@ def extract(request: ExtractRequest) -> dict:
     }
     summary = summarize_payload(payload, request.user_preference) if request.summarize else None
     return {**payload, "summary": summary}
+
+
+@app.get("/download-video")
+def download_video(url: str = Query(..., min_length=8)) -> FileResponse:
+    platform, _reason = detect_platform(url)
+    if platform not in {"instagram", "youtube"}:
+        raise HTTPException(status_code=400, detail="Video download is supported for Instagram and YouTube URLs.")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="agentic-video-download-"))
+    cookies_file = configured_youtube_cookies_file()
+    browser = "None" if cookies_file else configured_youtube_browser()
+
+    try:
+        if platform == "instagram":
+            shortcode = extract_shortcode(url)
+            file_path = download_instagram_video(shortcode, temp_dir)
+        else:
+            result = download_video_ytdlp(
+                url,
+                output_dir=str(temp_dir),
+                browser=browser,
+                cookies_file=cookies_file,
+                quality="Best",
+            )
+            if result.returncode != 0:
+                raise HTTPException(status_code=502, detail=result.stderr or "YouTube video download failed.")
+            file_path = newest_file(temp_dir)
+
+        if not file_path or not file_path.exists():
+            raise HTTPException(status_code=502, detail="Video download did not produce a file.")
+
+        return FileResponse(
+            path=file_path,
+            filename=file_path.name,
+            media_type="application/octet-stream",
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+        )
+    except HTTPException:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

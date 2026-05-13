@@ -19,6 +19,12 @@ type ContentBlock = {
   text: string;
 };
 
+type VideoLink = {
+  platform: string;
+  label: string;
+  url: string;
+};
+
 export default function Home() {
   const [input, setInput] = useState("");
   const [preference, setPreference] = useState("");
@@ -47,6 +53,10 @@ export default function Home() {
     []
   );
   const activeStep = loading ? Math.min(Math.floor(elapsedSeconds / 12), loadingSteps.length - 1) : -1;
+  const publicBackendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
+  const output = useMemo(() => buildOutput(contentBlocks), [contentBlocks]);
+  const transcriptText = output.transcripts.map(formatContentBlock).join("\n\n");
+  const captionText = output.captions.map(formatContentBlock).join("\n\n");
 
   useEffect(() => {
     if (!loading || !startedAt) {
@@ -87,12 +97,12 @@ export default function Home() {
       summarize: false,
       resolve_redirects: true,
       include_instagram_caption: true,
-      include_instagram_transcript: false,
+      include_instagram_transcript: true,
       include_youtube_metadata: true,
       include_youtube_transcript: true,
       include_xhs_caption: true,
       max_videos_per_collection: 5,
-      use_whisper: false,
+      use_whisper: true,
       fallback_extraction_text: extractionText,
       fallback_extraction_json: extractionJson
     };
@@ -145,7 +155,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         input,
-        userPreference: preference.trim() || "Summarize the extracted transcript and caption content clearly and concisely.",
+        userPreference: preference.trim() || "Summarize the extracted video transcript clearly and concisely. Use captions only as supporting context if the transcript is missing or unclear.",
         extractionJson: extractionResults
       })
     });
@@ -211,6 +221,45 @@ export default function Home() {
       });
     }
     return blocks;
+  }
+
+  function buildOutput(blocks: ContentBlock[]) {
+    const seenVideos = new Set<string>();
+    const videos: VideoLink[] = [];
+
+    for (const block of blocks) {
+      if (!block.url || seenVideos.has(block.url)) {
+        continue;
+      }
+      seenVideos.add(block.url);
+      videos.push({
+        platform: block.platform,
+        label: block.label,
+        url: block.url
+      });
+    }
+
+    return {
+      transcripts: blocks.filter((block) => block.kind === "transcript"),
+      captions: blocks.filter((block) => block.kind === "caption"),
+      videos
+    };
+  }
+
+  function formatContentBlock(block: ContentBlock) {
+    return [
+      `${block.platform.toUpperCase()} - ${block.label}`,
+      block.url,
+      "",
+      block.text
+    ].filter(Boolean).join("\n");
+  }
+
+  function downloadVideoUrl(url: string) {
+    if (!publicBackendUrl) {
+      return "";
+    }
+    return `${publicBackendUrl}/download-video?url=${encodeURIComponent(url)}`;
   }
 
   return (
@@ -284,7 +333,7 @@ export default function Home() {
               rows={8}
               value={preference}
               onChange={(event) => setPreference(event.target.value)}
-              placeholder="Type your exact summary request here."
+              placeholder="Type your exact summary request here. Leave blank for a default summary."
             />
           </label>
         </div>
@@ -345,37 +394,68 @@ export default function Home() {
           </div>
         ) : null}
 
-        {summary ? (
-          <div className="panel stack">
-            <div className="header">
-              <h2>LLM Content Summary</h2>
-              <button onClick={downloadSummary}>Download TXT</button>
+        <div className="panel stack">
+          <div className="header">
+            <div>
+              <h2>Output</h2>
+              <p className="meta">Transcript, caption, and summary stay separate so you can compare the original with the LLM output.</p>
             </div>
-            <div className="summary">{summary}</div>
+            <button onClick={summarizeExtractedContent} disabled={loading || summarizing || !extractionResults}>
+              {summarizing ? "Summarizing..." : "Summarize Transcript"}
+            </button>
           </div>
-        ) : null}
 
-        {contentBlocks.length > 0 ? (
-          <div className="panel stack">
-            <div className="header">
-              <h2>Full Extracted Content</h2>
-              <button onClick={summarizeExtractedContent} disabled={loading || summarizing}>
-                {summarizing ? "Summarizing..." : "Summarize"}
-              </button>
-            </div>
-            {contentBlocks.map((block, index) => (
-              <div className="contentBlock" key={`${block.platform}-${block.kind}-${index}`}>
-                <div className="contentBlockHeader">
-                  <span className={`badge ${block.platform}`}>{block.platform}</span>
-                  <strong>{block.kind === "caption" ? "Caption" : "Transcript"}</strong>
-                  <span className="meta">{block.label}</span>
-                </div>
-                {block.url ? <p className="meta">{block.url}</p> : null}
-                <textarea readOnly rows={Math.min(18, Math.max(6, Math.ceil(block.text.length / 110)))} value={block.text} />
-              </div>
-            ))}
+          <div className="outputGrid">
+            <label className="stack">
+              <span className="label">Video Transcript</span>
+              <textarea
+                readOnly
+                rows={18}
+                value={transcriptText}
+                placeholder="Transcript output will appear here after extraction."
+              />
+            </label>
+
+            <label className="stack">
+              <span className="label">Caption</span>
+              <textarea
+                readOnly
+                rows={18}
+                value={captionText}
+                placeholder="Caption output will appear here after extraction."
+              />
+            </label>
           </div>
-        ) : null}
+
+          <label className="stack">
+            <span className="label">Summarisation</span>
+            <textarea
+              readOnly
+              rows={14}
+              value={summary}
+              placeholder="Summary output will appear here after you click Summarize Transcript."
+            />
+          </label>
+
+          <div className="contentBlock">
+            <div className="contentBlockHeader">
+              <strong>Video Download</strong>
+              <span className="meta">{output.videos.length ? `${output.videos.length} video link(s) ready` : "Extract content first"}</span>
+            </div>
+            <div className="downloadList">
+              {output.videos.length > 0 ? output.videos.map((video, index) => {
+                const href = downloadVideoUrl(video.url);
+                return href ? (
+                  <a className="buttonLink" href={href} key={`${video.url}-${index}`}>
+                    Download {video.platform} Video {output.videos.length > 1 ? index + 1 : ""}
+                  </a>
+                ) : (
+                  <button disabled key={`${video.url}-${index}`}>Download Video</button>
+                );
+              }) : <button disabled>Download Video</button>}
+            </div>
+          </div>
+        </div>
 
         {backendJson ? (
           <div className="panel stack">
