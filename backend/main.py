@@ -250,7 +250,6 @@ def extract_youtube_video_id(url: str) -> tuple[str | None, bool]:
 def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
     delay = polite_delay("youtube")
     use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
-    use_whisper = use_whisper and env_bool("YOUTUBE_USE_WHISPER_FALLBACK", False)
     video_id, is_short = extract_youtube_video_id(url)
     cookies_file = configured_youtube_cookies_file()
     browser = "None" if cookies_file else configured_youtube_browser()
@@ -332,7 +331,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
         polite_delay("youtube-collection")
         cookies_file = configured_youtube_cookies_file()
         browser = "None" if cookies_file else configured_youtube_browser()
-        use_whisper = (request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)) and env_bool("YOUTUBE_USE_WHISPER_FALLBACK", False)
+        use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
         collection_results = process_youtube_urls(
             collections,
             temp_dir / "youtube",
