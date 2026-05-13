@@ -73,7 +73,7 @@ export default function Home() {
     setExtractionResults(null);
     setSelectedIndex(0);
 
-    const endpoint = "/api/extract";
+    const endpoint = publicBackendUrl ? `${publicBackendUrl}/extract` : "/api/extract";
     const body = {
       input,
       user_preference: preference,
@@ -88,36 +88,34 @@ export default function Home() {
       use_whisper: true
     };
 
-    let response: Response;
     try {
-      response = await fetch(endpoint, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
+
+      const data = (await response.json().catch(() => null)) as AnalyzeResponse | null;
+      if (!response.ok || data?.error) {
+        setError(data?.error || `Extraction failed with HTTP ${response.status}.`);
+        setLoading(false);
+        setStartedAt(null);
+        return;
+      }
+
+      const extractedPayload = {
+        routes: data?.routes,
+        results: data?.results
+      };
+      setExtractionResults(extractedPayload);
+      setBackendJson(JSON.stringify(extractedPayload, null, 2));
+      setLoading(false);
+      setStartedAt(null);
     } catch {
-      setError("Could not reach the backend through Vercel. Check that EC2 is running and BACKEND_URL is correct.");
+      setError("Could not reach the extraction backend. Check that EC2 is running and the backend URL is correct.");
       setLoading(false);
       setStartedAt(null);
-      return;
     }
-
-    const data = (await response.json()) as AnalyzeResponse;
-    if (!response.ok || data.error) {
-      setError(data.error || "Analysis failed.");
-      setLoading(false);
-      setStartedAt(null);
-      return;
-    }
-
-    const extractedPayload = {
-      routes: data.routes,
-      results: data.results
-    };
-    setExtractionResults(extractedPayload);
-    setBackendJson(JSON.stringify(extractedPayload, null, 2));
-    setLoading(false);
-    setStartedAt(null);
   }
 
   async function summarizeExtractedContent() {
