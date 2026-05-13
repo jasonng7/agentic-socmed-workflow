@@ -37,6 +37,19 @@ def find_downloaded_mp4(download_dir: Path, shortcode: str) -> Path:
     return mp4_files[0]
 
 
+def env_value(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+    return os.environ.get(name, default).strip()
+
+
 def build_instaloader(**kwargs) -> instaloader.Instaloader:
     """Create an Instaloader instance and load a session when configured."""
     loader = instaloader.Instaloader(
@@ -45,10 +58,11 @@ def build_instaloader(**kwargs) -> instaloader.Instaloader:
         download_geotags=False,
         download_pictures=False,
         download_video_thumbnails=False,
+        max_connection_attempts=1,
         **kwargs,
     )
-    username = os.environ.get("INSTAGRAM_USERNAME", "").strip()
-    session_file = os.environ.get("INSTAGRAM_SESSION_FILE", "").strip()
+    username = env_value("INSTAGRAM_USERNAME")
+    session_file = env_value("INSTAGRAM_SESSION_FILE")
     if username and session_file and Path(session_file).exists():
         loader.load_session_from_file(username, session_file)
     return loader
@@ -112,6 +126,7 @@ def process_instagram_urls(
         result = {
             "shortcode": "", "url": url, "status": "ok",
             "video_path": None, "transcript": "", "caption": "",
+            "instagram_session_used": bool(env_value("INSTAGRAM_SESSION_FILE")),
             "error": None,
         }
 
@@ -189,7 +204,6 @@ def process_instagram_urls(
         except Exception as exc:
             result["status"] = "error"
             result["error"] = str(exc)
-            traceback.print_exc()
 
         results.append(result)
 

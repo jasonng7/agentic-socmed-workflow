@@ -161,8 +161,8 @@ def configured_youtube_browser() -> str:
 
 
 def extract_instagram_caption_configured(shortcode: str) -> tuple[str, str]:
-    username = os.environ.get("INSTAGRAM_USERNAME", "").strip()
-    session_file = os.environ.get("INSTAGRAM_SESSION_FILE", "").strip()
+    username = env_string("INSTAGRAM_USERNAME")
+    session_file = env_string("INSTAGRAM_SESSION_FILE")
 
     if username and session_file and Path(session_file).exists():
         loader = instaloader.Instaloader(
