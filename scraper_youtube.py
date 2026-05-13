@@ -147,6 +147,7 @@ def scrape_video_list(channel_url, max_videos, browser="None", cookies_file=None
             "--playlist-end", str(max_videos),
             channel_url,
         ],
+        timeout=30,
         browser=browser,
         cookies_file=cookies_file,
     )
@@ -269,9 +270,6 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
     with tempfile.TemporaryDirectory() as tmpdir:
         out_tmpl = os.path.join(tmpdir, "sub")
         sub_attempts = [
-            ["--write-subs", "--sub-lang", "en"],
-            ["--write-auto-subs", "--sub-lang", "en"],
-            ["--write-auto-subs", "--sub-lang", "en-orig"],
             ["--write-subs", "--write-auto-subs", "--sub-lang", "en,en-US,en-GB,en-orig"],
             ["--write-auto-subs"],
         ]
@@ -294,7 +292,7 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
                         "--ignore-errors",
                         url,
                     ],
-                    timeout=40,
+                    timeout=20,
                     browser=browser,
                     cookies_file=cookies_file,
                 )
@@ -338,7 +336,7 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
                         "--no-warnings",
                         url,
                     ],
-                    timeout=300,
+                    timeout=120,
                     browser=browser,
                     cookies_file=cookies_file,
                 )
@@ -556,6 +554,7 @@ def get_single_video_metadata(url: str, browser="None", cookies_file=None) -> di
             "--ignore-errors",
             clean_url,
         ],
+        timeout=30,
         browser=browser,
         cookies_file=cookies_file,
     )
