@@ -72,6 +72,19 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def env_string(name: str, default: str = "") -> str:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+    return os.environ.get(name, default).strip()
+
+
 app = FastAPI(title="Agentic Socmed Workflow Backend")
 app.add_middleware(
     CORSMiddleware,
@@ -136,14 +149,14 @@ def polite_delay(stage: str, multiplier: float = 1.0) -> float:
 
 
 def configured_youtube_cookies_file() -> str | None:
-    path = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+    path = env_string("YOUTUBE_COOKIES_FILE")
     if path and Path(path).exists():
         return path
     return None
 
 
 def configured_youtube_browser() -> str:
-    browser = os.environ.get("YOUTUBE_BROWSER", "").strip()
+    browser = env_string("YOUTUBE_BROWSER")
     return browser or "None"
 
 

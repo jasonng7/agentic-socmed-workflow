@@ -57,12 +57,20 @@ def _ytdlp_cmd():
 def run_ytdlp(args, timeout=120, browser="None", cookies_file=None):
     """Run yt-dlp with de-restriction flags and cookie support."""
     cmd = _ytdlp_cmd()
+    deno_path = os.environ.get("YOUTUBE_DENO_PATH", "").strip()
+    if not deno_path:
+        home_deno = os.path.expanduser("~/.deno/bin/deno")
+        if os.path.exists(home_deno):
+            deno_path = home_deno
 
     cmd += [
         "--remote-components", "ejs:github",
         "--extractor-args",
         "youtube:player-client=web_creator,web;player-skip=web_embedded,tv,ios",
     ]
+
+    if deno_path:
+        cmd += ["--js-runtimes", f"deno:{deno_path}"]
 
     if cookies_file:
         cmd += ["--cookies", cookies_file]
