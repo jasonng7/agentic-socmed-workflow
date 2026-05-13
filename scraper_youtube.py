@@ -349,6 +349,7 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
                 run_ytdlp(
                     [
                         "-x",
+                        "--format", "worstaudio/bestaudio/best",
                         "--audio-format", "mp3",
                         "--audio-quality", "64K",
                         "--output", audio_tmpl,
