@@ -28,8 +28,6 @@ type VideoLink = {
 export default function Home() {
   const [input, setInput] = useState("");
   const [preference, setPreference] = useState("");
-  const [extractionText, setExtractionText] = useState("");
-  const [jsonText, setJsonText] = useState("");
   const [summary, setSummary] = useState("");
   const [backendJson, setBackendJson] = useState("");
   const [extractionResults, setExtractionResults] = useState<unknown>(null);
@@ -78,18 +76,6 @@ export default function Home() {
     setExtractionResults(null);
     setContentBlocks([]);
 
-    let extractionJson: unknown = undefined;
-    if (jsonText.trim()) {
-      try {
-        extractionJson = JSON.parse(jsonText);
-      } catch {
-        setError("Extraction JSON is not valid JSON.");
-        setLoading(false);
-        setStartedAt(null);
-        return;
-      }
-    }
-
     const endpoint = "/api/extract";
     const body = {
       input,
@@ -102,9 +88,7 @@ export default function Home() {
       include_youtube_transcript: true,
       include_xhs_caption: true,
       max_videos_per_collection: 5,
-      use_whisper: true,
-      fallback_extraction_text: extractionText,
-      fallback_extraction_json: extractionJson
+      use_whisper: true
     };
 
     let response: Response;
@@ -343,28 +327,6 @@ export default function Home() {
           {routes.length === 0 ? <p className="meta">No URLs detected yet.</p> : <div className="grid">{routes.map(routeCard)}</div>}
           {unsupported.length > 0 ? <p className="error">{unsupported.length} unsupported URL(s) detected.</p> : null}
           {supported.length > 0 ? <p className="meta">{supported.length} supported URL(s) ready for the backend workflow.</p> : null}
-        </div>
-
-        <div className="grid">
-          <label className="stack">
-            <span className="label">Optional extracted JSON</span>
-            <textarea
-              rows={12}
-              value={jsonText}
-              onChange={(event) => setJsonText(event.target.value)}
-              placeholder='Fallback mode only: [{"platform":"youtube","caption":"...","transcript":"..."}]'
-            />
-          </label>
-
-          <label className="stack">
-            <span className="label">Optional transcript/caption text</span>
-            <textarea
-              rows={12}
-              value={extractionText}
-              onChange={(event) => setExtractionText(event.target.value)}
-              placeholder="Fallback mode only: paste transcript and caption text here."
-            />
-          </label>
         </div>
 
         {error ? <div className="panel error">{error}</div> : null}
