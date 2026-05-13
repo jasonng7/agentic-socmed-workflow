@@ -136,11 +136,6 @@ export default function Home() {
       return;
     }
 
-    if (!preference.trim()) {
-      setError("Type what you want the LLM to do in the focus box before summarizing.");
-      return;
-    }
-
     setSummarizing(true);
     setError("");
     setSummary("");
@@ -150,7 +145,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         input,
-        userPreference: preference,
+        userPreference: preference.trim() || "Summarize the extracted transcript and caption content clearly and concisely.",
         extractionJson: extractionResults
       })
     });
