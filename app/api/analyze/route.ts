@@ -66,11 +66,11 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You analyze public social media extraction results. Use video transcripts and captions as the primary source of truth. Use metadata only as supporting context. Do not invent places, restaurants, addresses, prices, or facts that are not present. If the content is about travel, identify places, landmarks, cities, countries, routes, hotels, activities, timing, and practical travel notes mentioned. If the content is about food, identify food items, restaurant or stall names, locations, prices, ordering tips, and taste or recommendation signals mentioned. If the topic is something else, summarize the content and extract the most relevant entities, claims, instructions, calls to action, and useful details. When information is missing, say it is not mentioned in the transcript/caption. Return concise markdown with these sections: Content Summary, Category, Places And Locations, Food And Venue Details, Key Details, Useful Notes, Missing Or Unclear."
+            "You analyze public social media extraction results. Follow the user's request exactly, using transcripts and captions as the source of truth. Use metadata only as supporting context. Do not invent facts that are not present. If the user asks for a specific format, structure, language, level of detail, or focus, honor that instead of applying a fixed summary template."
         },
         {
           role: "user",
-          content: `User extraction preference:\n${userPreference}\n\nAnalyze the following data. Prioritize fields named caption and transcript.\n\n${extractionText}`
+          content: `User request:\n${userPreference}\n\nExtracted data to use. Prioritize fields named caption and transcript.\n\n${extractionText}`
         }
       ]
     })

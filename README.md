@@ -26,10 +26,10 @@ Set these environment variables in Vercel:
 OPENAI_API_KEY=your_openai_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
-NEXT_PUBLIC_BACKEND_URL=http://your-ec2-public-ip:8000
+NEXT_PUBLIC_BACKEND_URL=http://13.214.251.94:8000
 ```
 
-When `NEXT_PUBLIC_BACKEND_URL` is configured, the Vercel UI calls the FastAPI backend `/extract` endpoint. Without it, the UI falls back to local LLM-summary-only mode where you can paste extracted JSON/text manually.
+When `NEXT_PUBLIC_BACKEND_URL` is configured, the Vercel UI calls the FastAPI backend `/extract` endpoint. Extraction returns transcripts, captions, metadata, and raw JSON first. The LLM only summarizes after you click **Summarize**, using the request typed in the focus box.
 
 ### FastAPI Backend
 
@@ -44,7 +44,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Optional system dependency for video/audio transcription:
+Optional system dependency for temporary audio extraction before OpenAI transcription:
 
 ```bash
 brew install ffmpeg
@@ -78,15 +78,11 @@ OPENAI_MODEL = "gpt-4o-mini"
 4. The platform workflows run concurrently up to the selected worker cap.
 5. Captions and transcripts are selected by default where the platform supports them.
 6. Extracted data is saved under `./outputs/{platform}`.
-7. A raw run report and LLM content summary are saved under `./outputs/agentic_reports`.
+7. Review the raw transcript/caption content, then run an LLM summary only when needed.
 
 ## LLM Summary
 
-When enabled, the LLM summary uses video transcripts and captions as the primary source. It detects the likely content category and extracts useful details:
-
-- Travel content: places, landmarks, cities, countries, activities, hotels, routes, and practical notes mentioned.
-- Food content: dishes, restaurant or stall names, food locations, prices, ordering tips, and recommendation signals mentioned.
-- Other content: main topic, important entities, claims, instructions, calls to action, and missing details.
+When you click **Summarize**, the LLM uses video transcripts and captions as the primary source and follows the request typed in the focus box. There is no fixed backend summary template for the frontend summarize action.
 
 ## Notes
 

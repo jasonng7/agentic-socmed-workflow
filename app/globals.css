@@ -92,6 +92,13 @@ input:focus {
   gap: 16px;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .kicker,
 .label,
 .meta {

@@ -6,6 +6,7 @@ import { routeInput, RoutedUrl } from "@/lib/router";
 type AnalyzeResponse = {
   summary?: string;
   results?: unknown;
+  routes?: unknown;
   error?: string;
   details?: unknown;
 };
@@ -20,14 +21,16 @@ type ContentBlock = {
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [preference, setPreference] = useState("Summarize what the content is about. If travel, list places mentioned. If food, list food locations and venue details.");
+  const [preference, setPreference] = useState("");
   const [extractionText, setExtractionText] = useState("");
   const [jsonText, setJsonText] = useState("");
   const [summary, setSummary] = useState("");
   const [backendJson, setBackendJson] = useState("");
+  const [extractionResults, setExtractionResults] = useState<unknown>(null);
   const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -39,7 +42,6 @@ export default function Home() {
       "Routing links by platform",
       "Calling EC2 extraction backend through Vercel",
       "Extracting captions, transcripts, and metadata",
-      "Generating LLM content summary",
       "Returning JSON results"
     ],
     []
@@ -56,13 +58,14 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [loading, startedAt]);
 
-  async function analyze() {
+  async function extract() {
     setLoading(true);
     setStartedAt(Date.now());
     setElapsedSeconds(0);
     setError("");
     setSummary("");
     setBackendJson("");
+    setExtractionResults(null);
     setContentBlocks([]);
 
     let extractionJson: unknown = undefined;
@@ -81,7 +84,7 @@ export default function Home() {
     const body = {
       input,
       user_preference: preference,
-      summarize: true,
+      summarize: false,
       resolve_redirects: true,
       include_instagram_caption: true,
       include_instagram_transcript: false,
@@ -116,11 +119,51 @@ export default function Home() {
       return;
     }
 
-    setSummary(data.summary || "No summary returned.");
-    setBackendJson(data.results ? JSON.stringify(data.results, null, 2) : "");
+    const extractedPayload = {
+      routes: data.routes,
+      results: data.results
+    };
+    setExtractionResults(extractedPayload);
+    setBackendJson(JSON.stringify(extractedPayload, null, 2));
     setContentBlocks(extractContentBlocks(data.results));
     setLoading(false);
     setStartedAt(null);
+  }
+
+  async function summarizeExtractedContent() {
+    if (!extractionResults) {
+      setError("Extract content first, then summarize the generated output.");
+      return;
+    }
+
+    if (!preference.trim()) {
+      setError("Type what you want the LLM to do in the focus box before summarizing.");
+      return;
+    }
+
+    setSummarizing(true);
+    setError("");
+    setSummary("");
+
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input,
+        userPreference: preference,
+        extractionJson: extractionResults
+      })
+    });
+
+    const data = (await response.json()) as AnalyzeResponse;
+    if (!response.ok || data.error) {
+      setError(data.error || "Summary failed.");
+      setSummarizing(false);
+      return;
+    }
+
+    setSummary(data.summary || "No summary returned.");
+    setSummarizing(false);
   }
 
   function downloadSummary() {
@@ -222,9 +265,11 @@ export default function Home() {
             <p className="kicker">Step 1</p>
             <h1>Paste Links</h1>
           </div>
-          <button onClick={analyze} disabled={loading}>
-            {loading ? "Analyzing..." : "Generate Summary"}
-          </button>
+          <div className="actions">
+            <button onClick={extract} disabled={loading || summarizing}>
+              {loading ? "Extracting..." : "Extract Content"}
+            </button>
+          </div>
         </div>
 
         <div className="grid">
@@ -240,7 +285,12 @@ export default function Home() {
 
           <label className="stack">
             <span className="label">What should the LLM focus on?</span>
-            <textarea rows={8} value={preference} onChange={(event) => setPreference(event.target.value)} />
+            <textarea
+              rows={8}
+              value={preference}
+              onChange={(event) => setPreference(event.target.value)}
+              placeholder="Type your exact summary request here."
+            />
           </label>
         </div>
 
@@ -312,7 +362,12 @@ export default function Home() {
 
         {contentBlocks.length > 0 ? (
           <div className="panel stack">
-            <h2>Full Extracted Content</h2>
+            <div className="header">
+              <h2>Full Extracted Content</h2>
+              <button onClick={summarizeExtractedContent} disabled={loading || summarizing}>
+                {summarizing ? "Summarizing..." : "Summarize"}
+              </button>
+            </div>
             {contentBlocks.map((block, index) => (
               <div className="contentBlock" key={`${block.platform}-${block.kind}-${index}`}>
                 <div className="contentBlockHeader">

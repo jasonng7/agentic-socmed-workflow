@@ -14,6 +14,5 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 python-dotenv>=1.0.0
 
-# Install ONE Whisper backend:
-# macOS (Apple Silicon): pip install mlx-whisper
-# Linux (VPS):           pip install openai-whisper
+# Whisper fallback uses OpenAI's hosted Audio Transcriptions API.
+# Configure OPENAI_API_KEY and optionally OPENAI_WHISPER_MODEL=whisper-1.

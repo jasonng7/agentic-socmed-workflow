@@ -31,7 +31,7 @@ DEFAULT_ALLOWED_ORIGINS = [
 class ExtractRequest(BaseModel):
     input: str = Field(..., description="Free-form text containing one or more supported URLs.")
     user_preference: str = ""
-    summarize: bool = True
+    summarize: bool = False
     resolve_redirects: bool = True
     include_instagram_caption: bool = True
     include_instagram_transcript: bool = False
@@ -131,6 +131,11 @@ def configured_youtube_cookies_file() -> str | None:
     return None
 
 
+def configured_youtube_browser() -> str:
+    browser = os.environ.get("YOUTUBE_BROWSER", "").strip()
+    return browser or "None"
+
+
 def extract_instagram_caption_configured(shortcode: str) -> tuple[str, str]:
     username = os.environ.get("INSTAGRAM_USERNAME", "").strip()
     session_file = os.environ.get("INSTAGRAM_SESSION_FILE", "").strip()
@@ -223,6 +228,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
     use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
     video_id, is_short = extract_youtube_video_id(url)
     cookies_file = configured_youtube_cookies_file()
+    browser = "None" if cookies_file else configured_youtube_browser()
     item = {
         "platform": "youtube",
         "source_input_url": url,
@@ -240,6 +246,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
         "transcript_method": "",
         "metadata_status": "not_requested" if not request.include_youtube_metadata else "pending",
         "cookies_used": bool(cookies_file),
+        "browser_cookies": browser if browser != "None" else "",
         "whisper_enabled": use_whisper,
         "delay_seconds": delay,
         "status": "ok",
@@ -248,7 +255,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
 
     if request.include_youtube_metadata:
         try:
-            metadata = get_single_video_metadata(url, browser="None", cookies_file=cookies_file)
+            metadata = get_single_video_metadata(url, browser=browser, cookies_file=cookies_file)
             item.update(metadata)
             item["platform"] = "youtube"
             item["metadata_status"] = "ok"
@@ -269,7 +276,7 @@ def process_single_youtube_api(url: str, request: ExtractRequest) -> dict:
                 video_id,
                 is_short=is_short,
                 use_whisper=use_whisper,
-                browser="None",
+                browser=browser,
                 cookies_file=cookies_file,
             )
             item["transcript"] = transcript
@@ -299,6 +306,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
     if collections:
         polite_delay("youtube-collection")
         cookies_file = configured_youtube_cookies_file()
+        browser = "None" if cookies_file else configured_youtube_browser()
         use_whisper = request.use_whisper or env_bool("BACKEND_USE_WHISPER", False)
         collection_results = process_youtube_urls(
             collections,
@@ -308,7 +316,7 @@ def process_youtube_api(urls: list[str], request: ExtractRequest, temp_dir: Path
             download_videos=False,
             max_videos_per_collection=request.max_videos_per_collection,
             filter_type="All",
-            browser="None",
+            browser=browser,
             cookies_file=cookies_file,
             use_whisper=use_whisper,
             quality="Best",

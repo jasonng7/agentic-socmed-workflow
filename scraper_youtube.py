@@ -67,7 +67,7 @@ def run_ytdlp(args, timeout=120, browser="None", cookies_file=None):
     if cookies_file:
         cmd += ["--cookies", cookies_file]
     elif browser and browser != "None":
-        cmd += ["--cookies-from-browser", browser.lower()]
+        cmd += ["--cookies-from-browser", browser]
 
     res = subprocess.run(cmd + args, capture_output=True, text=True, timeout=timeout)
 
@@ -322,7 +322,14 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
                     except OSError:
                         pass
                 run_ytdlp(
-                    ["-x", "--output", audio_tmpl, "--no-warnings", url],
+                    [
+                        "-x",
+                        "--audio-format", "mp3",
+                        "--audio-quality", "64K",
+                        "--output", audio_tmpl,
+                        "--no-warnings",
+                        url,
+                    ],
                     timeout=300,
                     browser=browser,
                     cookies_file=cookies_file,

@@ -1,31 +1,25 @@
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
+import requests
+
 
 def get_whisper_backend() -> str:
-    """Detect available Whisper backend. Returns 'mlx' | 'openai' | 'none'."""
-    try:
-        import mlx_whisper  # noqa: F401
-        return "mlx"
-    except ImportError:
-        pass
-    try:
-        import whisper  # noqa: F401
-        return "openai"
-    except ImportError:
-        pass
+    """Detect available transcription backend. Returns 'openai-api' | 'none'."""
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return "openai-api"
     return "none"
 
 
 def get_whisper_info() -> str:
     """Human-readable string about which Whisper backend is available."""
     backend = get_whisper_backend()
-    if backend == "mlx":
-        return "Using mlx-whisper (whisper-large-v3-turbo) - Apple Silicon optimized"
-    elif backend == "openai":
-        return "Using openai-whisper (base model) - cross-platform"
-    return "No Whisper backend installed. Install mlx-whisper (macOS) or openai-whisper (Linux)"
+    if backend == "openai-api":
+        model = os.environ.get("OPENAI_WHISPER_MODEL", "whisper-1").strip() or "whisper-1"
+        return f"Using OpenAI Audio Transcriptions API ({model})"
+    return "OpenAI transcription is disabled because OPENAI_API_KEY is not configured."
 
 
 def check_ffmpeg() -> bool:
@@ -53,61 +47,45 @@ def extract_audio_with_ffmpeg(video_path: Path, mp3_path: Path) -> None:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
 
 
-def transcribe_with_mlx(mp3_path: Path, model: str = "mlx-community/whisper-large-v3-turbo") -> str:
-    """Transcribe using mlx_whisper. Tries multiple API signature variants."""
-    from mlx_whisper import transcribe
+def transcribe_with_openai_api(audio_path: Path, model: str = "whisper-1") -> str:
+    """Transcribe an audio file with OpenAI's hosted Audio Transcriptions API."""
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is required for OpenAI transcription.")
 
-    attempts = [
-        {"path_or_hf_repo": model},
-        {"model": model},
-        {"model_path": model},
-        {},
-    ]
-    last_error = None
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    timeout = int(os.environ.get("OPENAI_TRANSCRIPTION_TIMEOUT_SECONDS", "600"))
 
-    for kwargs in attempts:
-        try:
-            result = transcribe(str(mp3_path), **kwargs)
-            if isinstance(result, dict):
-                text = str(result.get("text", "")).strip()
-            else:
-                text = str(result).strip()
-            if text:
-                return text
-        except TypeError as exc:
-            last_error = exc
+    with audio_path.open("rb") as audio_file:
+        response = requests.post(
+            f"{base_url}/audio/transcriptions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            data={
+                "model": model,
+                "response_format": "json",
+            },
+            files={"file": (audio_path.name, audio_file)},
+            timeout=timeout,
+        )
 
-    raise RuntimeError(
-        "mlx-whisper transcribe API signature did not match expected variants. "
-        "Try upgrading mlx-whisper."
-    ) from last_error
+    if response.status_code >= 400:
+        raise RuntimeError(f"OpenAI transcription API HTTP {response.status_code}: {response.text}")
 
-
-def transcribe_with_openai_whisper(mp3_path: Path, model: str = "base") -> str:
-    """Transcribe using openai-whisper (for Linux VPS)."""
-    import whisper
-
-    wmodel = whisper.load_model(model)
-    result = wmodel.transcribe(str(mp3_path))
-    return result.get("text", "").strip()
+    data = response.json()
+    return str(data.get("text", "")).strip()
 
 
 def transcribe_audio(audio_path: Path, model: str | None = None) -> tuple[str, str]:
-    """Unified transcription entry point. Auto-detects backend.
+    """Unified transcription entry point.
     Returns (transcript_text, backend_used).
     Raises RuntimeError if no backend available."""
+    audio_path = Path(audio_path)
     backend = get_whisper_backend()
 
-    if backend == "mlx":
-        mlx_model = model or "mlx-community/whisper-large-v3-turbo"
-        return transcribe_with_mlx(audio_path, mlx_model), "mlx"
-    elif backend == "openai":
-        openai_model = model or "base"
-        return transcribe_with_openai_whisper(audio_path, openai_model), "openai"
-    else:
-        raise RuntimeError(
-            "No Whisper backend installed. Install mlx-whisper (macOS) or openai-whisper (Linux)"
-        )
+    if backend == "openai-api":
+        openai_model = model or os.environ.get("OPENAI_WHISPER_MODEL", "whisper-1").strip() or "whisper-1"
+        return transcribe_with_openai_api(audio_path, openai_model), "openai-api"
+    raise RuntimeError("OpenAI transcription is disabled because OPENAI_API_KEY is not configured.")
 
 
 def video_to_transcript(video_path: Path, temp_dir: Path | None = None,

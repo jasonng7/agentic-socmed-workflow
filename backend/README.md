@@ -33,11 +33,12 @@ Optional but recommended when platforms block anonymous scraping:
 
 ```bash
 YOUTUBE_COOKIES_FILE=/home/ubuntu/youtube-cookies.txt
+YOUTUBE_BROWSER=chrome
 INSTAGRAM_USERNAME=your_instagram_username
 INSTAGRAM_SESSION_FILE=/home/ubuntu/instagram-session
 ```
 
-YouTube cookies should be a Netscape-format `cookies.txt` exported from a browser session. Instagram session files can be created with Instaloader on your local machine or EC2, then referenced by path.
+YouTube cookies should be a Netscape-format `cookies.txt` exported from a browser session. If `YOUTUBE_COOKIES_FILE` is not set, `YOUTUBE_BROWSER` is passed to `yt-dlp --cookies-from-browser`, which is useful on a local machine with browser profiles but is usually not suitable for headless EC2. Instagram session files can be created with Instaloader on your local machine or EC2, then referenced by path.
 
 Polite delay settings:
 
@@ -52,9 +53,10 @@ Whisper fallback:
 
 ```bash
 BACKEND_USE_WHISPER=true
+OPENAI_WHISPER_MODEL=whisper-1
 ```
 
-This downloads audio temporarily when captions/transcripts are unavailable, runs Whisper, and deletes temporary media after the request. It is slower and uses more CPU/RAM than caption-only extraction.
+This downloads audio temporarily when captions/transcripts are unavailable, transcribes it with OpenAI's hosted Audio Transcriptions API, and deletes temporary media after the request. It removes the need to host `mlx-whisper` or `openai-whisper` on EC2.
 
 Endpoints:
 
