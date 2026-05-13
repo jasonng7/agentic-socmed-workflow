@@ -172,6 +172,71 @@ h2 {
   word-break: break-word;
 }
 
+.resultTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.resultTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+.resultTable th,
+.resultTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.resultTable th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.resultTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.selectedRow {
+  background: var(--panel-2);
+}
+
+.emptyCell {
+  color: var(--muted);
+  text-align: center;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rowActions button,
+.rowActions .buttonLink,
+.textButton {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.textButton {
+  background: transparent;
+  color: var(--text);
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.textButton:hover {
+  color: var(--accent);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

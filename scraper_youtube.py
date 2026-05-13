@@ -600,10 +600,29 @@ def get_single_video_metadata(url: str, browser="None", cookies_file=None) -> di
     except (ValueError, TypeError):
         upload_date_fmt = upload_date if upload_date not in ("NA", "None", "") else "N/A"
 
+    description = ""
+    desc_result = run_ytdlp(
+        [
+            "--no-playlist",
+            "--skip-download",
+            "--print",
+            "%(description)s",
+            "--no-warnings",
+            "--ignore-errors",
+            clean_url,
+        ],
+        timeout=20,
+        browser=browser,
+        cookies_file=cookies_file,
+    )
+    if desc_result.returncode == 0:
+        description = clean_transcript(desc_result.stdout.strip())
+
     return {
         "id": vid_id,
         "title": title,
         "url": final_url if final_url.startswith("http") else clean_url,
+        "caption": description,
         "duration": dur_str,
         "duration_sec": dur_sec,
         "upload_date": upload_date_fmt,

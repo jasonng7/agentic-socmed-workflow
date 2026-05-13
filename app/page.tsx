@@ -11,27 +11,24 @@ type AnalyzeResponse = {
   details?: unknown;
 };
 
-type ContentBlock = {
+type ExtractedItem = {
+  key: string;
   platform: string;
   label: string;
   url: string;
-  kind: "caption" | "transcript";
-  text: string;
-};
-
-type VideoLink = {
-  platform: string;
-  label: string;
-  url: string;
+  transcript: string;
+  caption: string;
+  transcriptStatus: string;
+  metadataStatus: string;
 };
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [preference, setPreference] = useState("");
-  const [summary, setSummary] = useState("");
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
   const [backendJson, setBackendJson] = useState("");
   const [extractionResults, setExtractionResults] = useState<unknown>(null);
-  const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -52,9 +49,9 @@ export default function Home() {
   );
   const activeStep = loading ? Math.min(Math.floor(elapsedSeconds / 12), loadingSteps.length - 1) : -1;
   const publicBackendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
-  const output = useMemo(() => buildOutput(contentBlocks), [contentBlocks]);
-  const transcriptText = output.transcripts.map(formatContentBlock).join("\n\n");
-  const captionText = output.captions.map(formatContentBlock).join("\n\n");
+  const extractedItems = useMemo(() => extractItems(extractionResults), [extractionResults]);
+  const selectedItem = extractedItems[selectedIndex] || null;
+  const selectedSummary = selectedItem ? summaries[selectedItem.key] || "" : "";
 
   useEffect(() => {
     if (!loading || !startedAt) {
@@ -71,10 +68,10 @@ export default function Home() {
     setStartedAt(Date.now());
     setElapsedSeconds(0);
     setError("");
-    setSummary("");
+    setSummaries({});
     setBackendJson("");
     setExtractionResults(null);
-    setContentBlocks([]);
+    setSelectedIndex(0);
 
     const endpoint = "/api/extract";
     const body = {
@@ -119,20 +116,18 @@ export default function Home() {
     };
     setExtractionResults(extractedPayload);
     setBackendJson(JSON.stringify(extractedPayload, null, 2));
-    setContentBlocks(extractContentBlocks(data.results));
     setLoading(false);
     setStartedAt(null);
   }
 
   async function summarizeExtractedContent() {
-    if (!extractionResults) {
+    if (!selectedItem) {
       setError("Extract content first, then summarize the generated output.");
       return;
     }
 
     setSummarizing(true);
     setError("");
-    setSummary("");
 
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -140,7 +135,7 @@ export default function Home() {
       body: JSON.stringify({
         input,
         userPreference: preference.trim() || "Summarize the extracted video transcript clearly and concisely. Use captions only as supporting context if the transcript is missing or unclear.",
-        extractionJson: extractionResults
+        extractionJson: selectedItem
       })
     });
 
@@ -151,18 +146,46 @@ export default function Home() {
       return;
     }
 
-    setSummary(data.summary || "No summary returned.");
+    setSummaries((current) => ({
+      ...current,
+      [selectedItem.key]: data.summary || "No summary returned."
+    }));
     setSummarizing(false);
   }
 
-  function downloadSummary() {
-    const blob = new Blob([summary], { type: "text/plain;charset=utf-8" });
+  function downloadText(filename: string, content: string, type = "text/plain;charset=utf-8") {
+    const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `llm-content-summary-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+    link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function csvCell(value: string) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  function transcriptCsv(items: ExtractedItem[]) {
+    const rows = [
+      ["Platform", "Title", "URL", "Transcript Status", "Transcript", "Caption", "Summary"],
+      ...items.map((item) => [
+        item.platform,
+        item.label,
+        item.url,
+        item.transcriptStatus,
+        item.transcript,
+        item.caption,
+        summaries[item.key] || ""
+      ])
+    ];
+    return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  }
+
+  function safeFilename(name: string, fallback: string) {
+    const cleaned = name.replace(/[^a-z0-9-_ ]/gi, " ").replace(/\s+/g, " ").trim();
+    return (cleaned || fallback).slice(0, 80);
   }
 
   function routeCard(route: RoutedUrl) {
@@ -175,13 +198,16 @@ export default function Home() {
     );
   }
 
-  function extractContentBlocks(results: unknown): ContentBlock[] {
-    const blocks: ContentBlock[] = [];
-    if (!results || typeof results !== "object") {
-      return blocks;
+  function extractItems(payload: unknown): ExtractedItem[] {
+    const source = payload && typeof payload === "object" && "results" in payload
+      ? (payload as { results?: unknown }).results
+      : payload;
+    if (!source || typeof source !== "object") {
+      return [];
     }
 
-    const grouped = results as Record<string, unknown>;
+    const items: ExtractedItem[] = [];
+    const grouped = source as Record<string, unknown>;
     for (const [platform, value] of Object.entries(grouped)) {
       if (!Array.isArray(value)) {
         continue;
@@ -192,51 +218,20 @@ export default function Home() {
         }
         const record = item as Record<string, unknown>;
         const url = String(record.url || record.source_input_url || "");
-        const title = String(record.title || record.shortcode || record.post_id || `Item ${index + 1}`);
-        const caption = typeof record.caption === "string" ? record.caption.trim() : "";
-        const transcript = typeof record.transcript === "string" ? record.transcript.trim() : "";
-
-        if (caption && !caption.startsWith("[Error")) {
-          blocks.push({ platform, label: title, url, kind: "caption", text: caption });
-        }
-        if (transcript && !transcript.startsWith("[Transcription error")) {
-          blocks.push({ platform, label: title, url, kind: "transcript", text: transcript });
-        }
+        const label = String(record.title || record.shortcode || record.post_id || `${platform} ${index + 1}`);
+        items.push({
+          key: `${platform}-${index}-${url || label}`,
+          platform,
+          label,
+          url,
+          transcript: typeof record.transcript === "string" ? record.transcript.trim() : "",
+          caption: typeof record.caption === "string" ? record.caption.trim() : "",
+          transcriptStatus: String(record.transcript_status || record.status || ""),
+          metadataStatus: String(record.metadata_status || record.status || "")
+        });
       });
     }
-    return blocks;
-  }
-
-  function buildOutput(blocks: ContentBlock[]) {
-    const seenVideos = new Set<string>();
-    const videos: VideoLink[] = [];
-
-    for (const block of blocks) {
-      if (!block.url || seenVideos.has(block.url)) {
-        continue;
-      }
-      seenVideos.add(block.url);
-      videos.push({
-        platform: block.platform,
-        label: block.label,
-        url: block.url
-      });
-    }
-
-    return {
-      transcripts: blocks.filter((block) => block.kind === "transcript"),
-      captions: blocks.filter((block) => block.kind === "caption"),
-      videos
-    };
-  }
-
-  function formatContentBlock(block: ContentBlock) {
-    return [
-      `${block.platform.toUpperCase()} - ${block.label}`,
-      block.url,
-      "",
-      block.text
-    ].filter(Boolean).join("\n");
+    return items;
   }
 
   function downloadVideoUrl(url: string) {
@@ -255,28 +250,6 @@ export default function Home() {
           <p className="meta">
             JSON-first interface for routing links, calling the Python backend, and summarizing transcript/caption data.
           </p>
-        </div>
-
-        <div className="panel stack">
-          <h2>Default Extraction</h2>
-          <div className="checks">
-            <label className="check">
-              <input checked readOnly type="checkbox" />
-              Caption
-            </label>
-            <label className="check">
-              <input checked readOnly type="checkbox" />
-              Transcript
-            </label>
-            <label className="check">
-              <input checked readOnly type="checkbox" />
-              Metadata
-            </label>
-            <label className="check">
-              <input readOnly type="checkbox" />
-              Video download only as temporary backend step
-            </label>
-          </div>
         </div>
 
         <div className="panel stack">
@@ -360,11 +333,68 @@ export default function Home() {
           <div className="header">
             <div>
               <h2>Output</h2>
-              <p className="meta">Transcript, caption, and summary stay separate so you can compare the original with the LLM output.</p>
+              <p className="meta">Each extracted link has its own transcript, caption, summary, and download actions.</p>
             </div>
-            <button onClick={summarizeExtractedContent} disabled={loading || summarizing || !extractionResults}>
-              {summarizing ? "Summarizing..." : "Summarize Transcript"}
-            </button>
+            <div className="actions">
+              <button
+                onClick={() => downloadText("transcripts.csv", transcriptCsv(extractedItems), "text/csv;charset=utf-8")}
+                disabled={extractedItems.length === 0}
+              >
+                Download CSV
+              </button>
+              <button onClick={summarizeExtractedContent} disabled={loading || summarizing || !selectedItem}>
+                {summarizing ? "Summarizing..." : "Summarize Selected"}
+              </button>
+            </div>
+          </div>
+
+          <div className="resultTableWrap">
+            <table className="resultTable">
+              <thead>
+                <tr>
+                  <th>Platform</th>
+                  <th>Title</th>
+                  <th>Transcript</th>
+                  <th>Caption</th>
+                  <th>Summary</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {extractedItems.length > 0 ? extractedItems.map((item, index) => {
+                  const isSelected = selectedItem?.key === item.key;
+                  const videoHref = downloadVideoUrl(item.url);
+                  return (
+                    <tr className={isSelected ? "selectedRow" : ""} key={item.key}>
+                      <td><span className={`badge ${item.platform}`}>{item.platform}</span></td>
+                      <td>
+                        <button className="textButton" onClick={() => setSelectedIndex(index)}>{item.label}</button>
+                        {item.url ? <p className="meta">{item.url}</p> : null}
+                      </td>
+                      <td>{item.transcript ? "Ready" : item.transcriptStatus || "Missing"}</td>
+                      <td>{item.caption ? "Ready" : "Missing"}</td>
+                      <td>{summaries[item.key] ? "Ready" : "Not yet"}</td>
+                      <td>
+                        <div className="rowActions">
+                          <button onClick={() => setSelectedIndex(index)}>View</button>
+                          <button
+                            onClick={() => downloadText(`${safeFilename(item.label, "transcript")}.txt`, item.transcript || "")}
+                            disabled={!item.transcript}
+                          >
+                            TXT
+                          </button>
+                          {videoHref ? <a className="buttonLink" href={videoHref}>Video</a> : <button disabled>Video</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={6} className="emptyCell">Extract links to populate the results table.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
           <div className="outputGrid">
@@ -373,7 +403,7 @@ export default function Home() {
               <textarea
                 readOnly
                 rows={18}
-                value={transcriptText}
+                value={selectedItem?.transcript || ""}
                 placeholder="Transcript output will appear here after extraction."
               />
             </label>
@@ -383,7 +413,7 @@ export default function Home() {
               <textarea
                 readOnly
                 rows={18}
-                value={captionText}
+                value={selectedItem?.caption || ""}
                 placeholder="Caption output will appear here after extraction."
               />
             </label>
@@ -394,29 +424,10 @@ export default function Home() {
             <textarea
               readOnly
               rows={14}
-              value={summary}
+              value={selectedSummary}
               placeholder="Summary output will appear here after you click Summarize Transcript."
             />
           </label>
-
-          <div className="contentBlock">
-            <div className="contentBlockHeader">
-              <strong>Video Download</strong>
-              <span className="meta">{output.videos.length ? `${output.videos.length} video link(s) ready` : "Extract content first"}</span>
-            </div>
-            <div className="downloadList">
-              {output.videos.length > 0 ? output.videos.map((video, index) => {
-                const href = downloadVideoUrl(video.url);
-                return href ? (
-                  <a className="buttonLink" href={href} key={`${video.url}-${index}`}>
-                    Download {video.platform} Video {output.videos.length > 1 ? index + 1 : ""}
-                  </a>
-                ) : (
-                  <button disabled key={`${video.url}-${index}`}>Download Video</button>
-                );
-              }) : <button disabled>Download Video</button>}
-            </div>
-          </div>
         </div>
 
         {backendJson ? (
