@@ -253,12 +253,31 @@ def get_transcript(video_id, is_short=False, use_whisper=False,
             pass
         try:
             tlist = YouTubeTranscriptApi.list_transcripts(video_id)
+            english_codes = {"en", "en-US", "en-GB"}
+            ordered = []
+            translatable = []
             for t in tlist:
+                if t.language_code in english_codes:
+                    ordered.append(t)
+                elif getattr(t, "is_translatable", False):
+                    translatable.append(t)
+
+            for t in ordered:
                 try:
                     entries = t.fetch()
                     text = clean_transcript(" ".join(e["text"] for e in entries))
                     if text:
                         return text, "ok", f"api-{t.language_code}"
+                except Exception:
+                    continue
+
+            for t in translatable:
+                try:
+                    translated = t.translate("en")
+                    entries = translated.fetch()
+                    text = clean_transcript(" ".join(e["text"] for e in entries))
+                    if text:
+                        return text, "ok", f"api-{t.language_code}-to-en"
                 except Exception:
                     continue
         except Exception:
